@@ -9,4 +9,9 @@ public class SaludDTO {
     public String hashTable;        // "OK (N entradas)"
     public String kdTree;           // "OK (N nodos activos)"
     public int    registrosTotales;
+
+    // campos adicionales que consume el frontend
+    public double hashTableCarga;   // factor de carga 0.0-1.0
+    public int    kdtreeNodos;      // nodos activos en el KD-tree
+    public long   archivoBytes;     // tamaño del archivo en bytes
 }

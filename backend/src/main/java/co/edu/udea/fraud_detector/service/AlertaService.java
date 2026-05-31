@@ -2,6 +2,7 @@ package co.edu.udea.fraud_detector.service;
 
 import co.edu.udea.fraud_detector.estructura.hash.HashTable;
 import co.edu.udea.fraud_detector.estructura.kdtree.KDTree;
+import co.edu.udea.fraud_detector.model.dto.AlertaListaDTO;
 import co.edu.udea.fraud_detector.model.dto.TransaccionCompletaDTO;
 import co.edu.udea.fraud_detector.model.enums.EstadoAlerta;
 import co.edu.udea.fraud_detector.model.exception.TransaccionNoEncontradaException;
@@ -30,13 +31,21 @@ public class AlertaService {
         this.kdTree      = kdTree;
     }
 
-    public List<TransaccionCompletaDTO> listarActivas() throws IOException {
-        return fileManager.loadAll().stream()
+    public AlertaListaDTO listarActivas(int nivelMinimo) throws IOException {
+        List<TransaccionCompletaDTO> txns = fileManager.loadAll().stream()
                 .filter(RegistroTransaccion::isActivo)
-                .filter(r -> r.estado_alerta == EstadoAlerta.MEDIA.codigo
-                          || r.estado_alerta == EstadoAlerta.ALTA.codigo)
+                .filter(r -> (r.estado_alerta & 0xFF) >= nivelMinimo
+                          && ((r.estado_alerta & 0xFF) == EstadoAlerta.MEDIA.codigo
+                           || (r.estado_alerta & 0xFF) == EstadoAlerta.ALTA.codigo))
                 .map(TransaccionCompletaDTO::from)
                 .collect(Collectors.toList());
+
+        AlertaListaDTO resultado = new AlertaListaDTO();
+        resultado.transacciones = txns;
+        resultado.totalAlertas  = txns.size();
+        resultado.alertasAlta   = txns.stream().filter(t -> t.estadoAlerta == EstadoAlerta.ALTA.codigo).count();
+        resultado.alertasMedia  = txns.stream().filter(t -> t.estadoAlerta == EstadoAlerta.MEDIA.codigo).count();
+        return resultado;
     }
 
     public TransaccionCompletaDTO confirmar(String id) throws IOException {

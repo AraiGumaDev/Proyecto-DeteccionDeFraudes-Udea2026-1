@@ -2,9 +2,11 @@ package co.edu.udea.fraud_detector.service;
 
 import co.edu.udea.fraud_detector.estructura.kdtree.KDTree;
 import co.edu.udea.fraud_detector.estructura.kdtree.ResultadoKNN;
+import co.edu.udea.fraud_detector.model.dto.AnalisisResultadoDTO;
 import co.edu.udea.fraud_detector.model.dto.RangoBusquedaDTO;
+import co.edu.udea.fraud_detector.model.dto.RangoResultadoDTO;
 import co.edu.udea.fraud_detector.model.dto.TransaccionCompletaDTO;
-import co.edu.udea.fraud_detector.model.dto.VecinoDTO;
+import co.edu.udea.fraud_detector.model.dto.VecinosResultadoDTO;
 import co.edu.udea.fraud_detector.model.enums.EstadoAlerta;
 import co.edu.udea.fraud_detector.model.exception.TransaccionNoEncontradaException;
 import co.edu.udea.fraud_detector.model.exception.ValidacionException;
@@ -17,6 +19,7 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 // Detección de fraude con KNN sobre el KD-tree
@@ -68,7 +71,7 @@ public class DeteccionService {
         return clasificarSegunVecinos(vecinos);
     }
 
-    public TransaccionCompletaDTO analizar(String id) throws IOException {
+    public AnalisisResultadoDTO analizar(String id, int k) throws IOException {
         RegistroTransaccion reg = leerActivo(id);
         byte nuevoEstado = reclasificarAlerta(reg);
         if (nuevoEstado != reg.estado_alerta) {
@@ -76,11 +79,32 @@ public class DeteccionService {
             kdTree.actualizarEstado(id, nuevoEstado);
             reg.estado_alerta = nuevoEstado;
         }
-        log.info("Análisis KNN [{}] → {}", id, EstadoAlerta.fromCodigo(nuevoEstado).name());
-        return TransaccionCompletaDTO.from(reg);
+
+        // contar vecinos fraude (para la respuesta)
+        long vecinosFraude = 0;
+        int kEfectivo = Math.min(k, kdTree.getSizeActivos() - 1);
+        if (kEfectivo > 0) {
+            List<ResultadoKNN> todos = kdTree.knn(reg.getDimensiones(), kEfectivo + 1);
+            vecinosFraude = todos.stream()
+                    .filter(v -> !v.registro.getIdTransaccion().equals(id))
+                    .limit(kEfectivo)
+                    .filter(v -> v.registro.estado_alerta == EstadoAlerta.CONFIRMADO_FRAUDE.codigo)
+                    .count();
+        }
+
+        int codigo = nuevoEstado & 0xFF;
+        log.info("Análisis KNN [{}] → {}", id, EstadoAlerta.fromCodigo(codigo).name());
+
+        AnalisisResultadoDTO dto = new AnalisisResultadoDTO();
+        dto.idTransaccion        = id;
+        dto.kUtilizado           = kEfectivo;
+        dto.vecinosFraude        = vecinosFraude;
+        dto.estadoAlertaAsignado = codigo;
+        dto.estadoAlertaNombre   = EstadoAlerta.fromCodigo(codigo).name();
+        return dto;
     }
 
-    public List<VecinoDTO> obtenerVecinos(String id, int k) throws IOException {
+    public VecinosResultadoDTO obtenerVecinos(String id, int k) throws IOException {
         if (k < 1 || k > 50) throw new ValidacionException("k debe estar entre 1 y 50");
         RegistroTransaccion reg = leerActivo(id);
         if (kdTree.getSizeActivos() <= k) {
@@ -88,50 +112,78 @@ public class DeteccionService {
                 "El sistema necesita al menos " + (k + 1) + " registros activos para buscar " + k + " vecinos");
         }
         List<ResultadoKNN> todos = kdTree.knn(reg.getDimensiones(), k + 1);
-        List<VecinoDTO> resultado = new ArrayList<>();
+        List<VecinosResultadoDTO.Vecino> vecinos = new ArrayList<>();
         int posicion = 1;
         for (ResultadoKNN r : todos) {
             if (r.registro.getIdTransaccion().equals(id)) continue;
-            resultado.add(VecinoDTO.of(posicion++, r.distancia, TransaccionCompletaDTO.from(r.registro)));
-            if (resultado.size() == k) break;
+            VecinosResultadoDTO.Vecino v = new VecinosResultadoDTO.Vecino();
+            v.posicion              = posicion++;
+            v.idTransaccion         = r.registro.getIdTransaccion();
+            v.monto                 = r.registro.monto;
+            v.tipo                  = r.registro.getDimensiones()[3] == 0 ? "RETIRO"
+                                    : r.registro.getDimensiones()[3] == 0.5 ? "DEPOSITO" : "TRANSFERENCIA";
+            int cod = r.registro.estado_alerta & 0xFF;
+            v.estadoAlerta          = cod;
+            v.estadoAlertaNombre    = EstadoAlerta.fromCodigo(cod).name();
+            v.distanciaEuclidiana   = r.distancia;
+            vecinos.add(v);
+            if (vecinos.size() == k) break;
         }
+
+        VecinosResultadoDTO resultado = new VecinosResultadoDTO();
+        resultado.idTransaccionConsulta = id;
+        resultado.k                     = k;
+        resultado.vecinos               = vecinos;
         return resultado;
     }
 
-    public List<TransaccionCompletaDTO> buscarRango(RangoBusquedaDTO rango) {
-        if (rango.min == null || rango.max == null
-                || rango.min.length != 5 || rango.max.length != 5) {
-            throw new ValidacionException("min y max deben ser arrays de exactamente 5 valores");
-        }
+    public RangoResultadoDTO buscarRango(RangoBusquedaDTO rango) {
+        double[] min = rango.toMinArray();
+        double[] max = rango.toMaxArray();
         for (int i = 0; i < 5; i++) {
-            if (rango.min[i] > rango.max[i]) {
-                throw new ValidacionException("min[" + i + "] no puede ser mayor que max[" + i + "]");
+            if (min[i] > max[i]) {
+                throw new ValidacionException("El mínimo no puede ser mayor que el máximo en la dimensión " + (i + 1));
             }
         }
-        return kdTree.rangeSearch(rango.min, rango.max)
+        List<TransaccionCompletaDTO> txns = kdTree.rangeSearch(min, max)
                 .stream()
                 .map(TransaccionCompletaDTO::from)
                 .collect(Collectors.toList());
+
+        RangoResultadoDTO resultado = new RangoResultadoDTO();
+        resultado.total         = txns.size();
+        resultado.transacciones = txns;
+        return resultado;
     }
 
     // re-clasifica todas las NORMAL/MEDIA con el estado actual del árbol; útil tras confirmar fraudes
-    public int escaneoMasivo() throws IOException {
+    public Map<String, Object> escaneoMasivo() throws IOException {
         List<RegistroTransaccion> todos = fileManager.loadAll();
         int actualizados = 0;
+        int analizadas   = 0;
+        int nuevasAlta   = 0;
         for (RegistroTransaccion r : todos) {
             if (!r.isActivo()) continue;
             byte estado = r.estado_alerta;
             if (estado != EstadoAlerta.NORMAL.codigo && estado != EstadoAlerta.MEDIA.codigo) continue;
+            analizadas++;
 
             byte nuevoEstado = reclasificarAlerta(r);
             if (nuevoEstado != estado) {
                 fileManager.updateEstadoAlerta(r.numRegistro, nuevoEstado);
                 kdTree.actualizarEstado(r.getIdTransaccion(), nuevoEstado);
                 actualizados++;
+                if ((nuevoEstado & 0xFF) == EstadoAlerta.ALTA.codigo) nuevasAlta++;
             }
         }
-        log.info("Escaneo masivo completado | actualizados: {}", actualizados);
-        return actualizados;
+        log.info("Escaneo masivo completado | analizadas: {} | actualizados: {} | nuevas ALTA: {}",
+                analizadas, actualizados, nuevasAlta);
+        // Las claves del Map no se convierten por Jackson → usamos snake_case directamente
+        return Map.of(
+                "mensaje",                  "Escaneo masivo completado",
+                "transacciones_analizadas", analizadas,
+                "alertas_nuevas_alta",      nuevasAlta,
+                "actualizados",             actualizados);
     }
 
     private byte clasificarSegunVecinos(List<ResultadoKNN> vecinos) {

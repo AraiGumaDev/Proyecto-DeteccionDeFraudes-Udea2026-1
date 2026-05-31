@@ -4,25 +4,26 @@ import java.util.Map;
 
 /**
  * Respuesta de GET /api/v1/sistema/estadisticas.
+ * Estructura anidada que coincide con lo que espera el frontend React.
  */
 public class EstadisticasDTO {
 
-    // Archivo
-    public int    totalRegistros;
-    public int    registrosActivos;
-    public int    registrosEliminados;
-    public String archivoRuta;
+    public int totalTransacciones;   // total activas
+    public int totalEliminadas;
 
-    // Distribución por estado de alerta (solo activos)
-    public Map<String, Long> distribucionEstados;
+    public Map<String, Long> distribucionAlertas;  // keys: normal, media, alta, confirmado_fraude, falso_positivo
 
-    // Hash Table
-    public int    hashEntradas;
-    public int    hashTableSize;
-    public double hashLoadFactor;
-    public int    hashBucketsOcupados;
+    public HashTableStats hashTable;
+    public KDTreeStats    kdtree;
 
-    // KD-tree
-    public int    kdTreeTotalNodos;
-    public int    kdTreeNodosActivos;
+    public static class HashTableStats {
+        public int    bucketsTotales;
+        public double factorCarga;
+        public int    colisiones;   // entradas que comparten bucket (size - bucketsOcupados)
+    }
+
+    public static class KDTreeStats {
+        public int totalNodos;
+        public int profundidadMax;
+    }
 }

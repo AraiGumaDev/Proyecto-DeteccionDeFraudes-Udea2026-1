@@ -190,4 +190,11 @@ public class KDTree {
     public int getSizeActivos() { return sizeActivos; }
     public int getTotalNodos()  { return totalNodos; }
     public boolean isEmpty()    { return raiz == null; }
+
+    public int getProfundidadMax() { return profundidadRecursiva(raiz, 0); }
+    private int profundidadRecursiva(KDNode nodo, int depth) {
+        if (nodo == null) return depth;
+        return Math.max(profundidadRecursiva(nodo.izquierdo, depth + 1),
+                        profundidadRecursiva(nodo.derecho,   depth + 1));
+    }
 }

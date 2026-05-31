@@ -111,15 +111,19 @@ public class TransaccionService {
                 .filter(r -> tipo == null
                         || TipoTransaccion.fromValor(r.d4_tipo).name().equalsIgnoreCase(tipo))
                 .filter(r -> estadoAlerta == null
-                        || EstadoAlerta.fromCodigo(r.estado_alerta).name().equalsIgnoreCase(estadoAlerta))
+                        || String.valueOf(r.estado_alerta & 0xFF).equals(estadoAlerta)
+                        || EstadoAlerta.fromCodigo(r.estado_alerta & 0xFF).name().equalsIgnoreCase(estadoAlerta))
                 .map(TransaccionCompletaDTO::from)
                 .collect(Collectors.toList());
 
+        int total = filtrados.size();
+        int totalPags = tamano > 0 ? (int) Math.ceil((double) total / tamano) : 0;
+
         PaginaDTO<TransaccionCompletaDTO> resultado = new PaginaDTO<>();
-        resultado.totalFiltrados = filtrados.size();
-        resultado.pagina         = pagina;
-        resultado.tamano         = tamano;
-        resultado.contenido      = filtrados.stream()
+        resultado.totalElementos = total;
+        resultado.paginaActual   = pagina;
+        resultado.totalPaginas   = totalPags;
+        resultado.transacciones  = filtrados.stream()
                 .skip((long) pagina * tamano)
                 .limit(tamano)
                 .collect(Collectors.toList());

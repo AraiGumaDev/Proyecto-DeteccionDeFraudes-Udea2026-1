@@ -4,12 +4,11 @@ import java.util.List;
 
 /**
  * Respuesta paginada genérica.
- * totalFiltrados indica cuántos registros coinciden con los filtros aplicados
- * (sin paginación), lo que permite al frontend calcular el total de páginas.
+ * totalElementos indica cuántos registros coinciden con los filtros (sin paginación).
  */
 public class PaginaDTO<T> {
-    public List<T> contenido;
-    public int     totalFiltrados;  // total que coincide con los filtros
-    public int     pagina;          // página actual (base 0)
-    public int     tamano;          // registros solicitados por página
+    public List<T> transacciones;   // contenido de la página
+    public int     totalElementos;  // total que coincide con los filtros
+    public int     paginaActual;    // página actual (base 0)
+    public int     totalPaginas;    // ceil(totalElementos / tamanoPagina)
 }

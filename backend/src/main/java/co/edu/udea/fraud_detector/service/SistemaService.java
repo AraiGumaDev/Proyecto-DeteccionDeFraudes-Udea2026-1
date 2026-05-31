@@ -13,6 +13,7 @@ import co.edu.udea.fraud_detector.persistencia.RegistroTransaccion;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -49,7 +50,6 @@ public class SistemaService {
         int activos   = (int) todos.stream().filter(RegistroTransaccion::isActivo).count();
         int eliminados = total - activos;
 
-        // Distribución por estado (orden fijo para facilitar la lectura)
         Map<String, Long> distribucion = new LinkedHashMap<>();
         for (EstadoAlerta e : EstadoAlerta.values()) {
             distribucion.put(e.name(), 0L);
@@ -61,20 +61,29 @@ public class SistemaService {
                         Collectors.counting()))
                 .forEach(distribucion::put);
 
+        // claves en minúsculas para el frontend
+        Map<String, Long> distribucionFrontend = new LinkedHashMap<>();
+        distribucionFrontend.put("normal",            distribucion.getOrDefault("NORMAL", 0L));
+        distribucionFrontend.put("media",             distribucion.getOrDefault("MEDIA", 0L));
+        distribucionFrontend.put("alta",              distribucion.getOrDefault("ALTA", 0L));
+        distribucionFrontend.put("confirmado_fraude", distribucion.getOrDefault("CONFIRMADO_FRAUDE", 0L));
+        distribucionFrontend.put("falso_positivo",    distribucion.getOrDefault("FALSO_POSITIVO", 0L));
+
         EstadisticasDTO dto = new EstadisticasDTO();
-        dto.totalRegistros      = total;
-        dto.registrosActivos    = activos;
-        dto.registrosEliminados = eliminados;
-        dto.archivoRuta         = fileManager.getFilePath();
-        dto.distribucionEstados = distribucion;
+        dto.totalTransacciones  = activos;
+        dto.totalEliminadas     = eliminados;
+        dto.distribucionAlertas = distribucionFrontend;
 
-        dto.hashEntradas        = hashTable.size();
-        dto.hashTableSize       = hashTable.getTableSize();
-        dto.hashLoadFactor      = hashTable.getLoadFactor();
-        dto.hashBucketsOcupados = hashTable.getBucketsOcupados();
+        EstadisticasDTO.HashTableStats ht = new EstadisticasDTO.HashTableStats();
+        ht.bucketsTotales = hashTable.getTableSize();
+        ht.factorCarga    = hashTable.getLoadFactor();
+        ht.colisiones     = Math.max(0, hashTable.size() - hashTable.getBucketsOcupados());
+        dto.hashTable     = ht;
 
-        dto.kdTreeTotalNodos    = kdTree.getTotalNodos();
-        dto.kdTreeNodosActivos  = kdTree.getSizeActivos();
+        EstadisticasDTO.KDTreeStats kd = new EstadisticasDTO.KDTreeStats();
+        kd.totalNodos     = kdTree.getSizeActivos();
+        kd.profundidadMax = kdTree.getProfundidadMax();
+        dto.kdtree        = kd;
 
         return dto;
     }
@@ -95,7 +104,6 @@ public class SistemaService {
 
         dataSeeder.seed();
 
-        // Recargar estructuras en memoria desde el archivo recién sembrado
         List<RegistroTransaccion> todos = fileManager.loadAll();
         dimensionCalculator.inicializar(todos);
         for (RegistroTransaccion r : todos) {
@@ -118,16 +126,22 @@ public class SistemaService {
 
     public SaludDTO salud() {
         SaludDTO dto = new SaludDTO();
+        long archivoBytesVal = 0;
         try {
             dto.registrosTotales = fileManager.contarRegistros();
             dto.archivoDatos     = "OK";
+            File f = new File(fileManager.getFilePath());
+            archivoBytesVal = f.exists() ? f.length() : 0;
         } catch (IOException e) {
             dto.archivoDatos     = "ERROR: " + e.getMessage();
             dto.registrosTotales = -1;
         }
-        dto.hashTable = "OK (" + hashTable.size() + " entradas)";
-        dto.kdTree    = "OK (" + kdTree.getSizeActivos() + " nodos activos)";
-        dto.estado    = dto.archivoDatos.equals("OK") ? "OK" : "DEGRADADO";
+        dto.hashTable      = "OK (" + hashTable.size() + " entradas)";
+        dto.kdTree         = "OK (" + kdTree.getSizeActivos() + " nodos activos)";
+        dto.estado         = dto.archivoDatos.equals("OK") ? "OK" : "DEGRADADO";
+        dto.hashTableCarga = hashTable.getLoadFactor();
+        dto.kdtreeNodos    = kdTree.getSizeActivos();
+        dto.archivoBytes   = archivoBytesVal;
         return dto;
     }
 }

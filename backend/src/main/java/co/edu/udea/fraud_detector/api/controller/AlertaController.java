@@ -1,12 +1,12 @@
 package co.edu.udea.fraud_detector.api.controller;
 
+import co.edu.udea.fraud_detector.model.dto.AlertaListaDTO;
 import co.edu.udea.fraud_detector.model.dto.TransaccionCompletaDTO;
 import co.edu.udea.fraud_detector.service.AlertaService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/alertas")
@@ -18,10 +18,11 @@ public class AlertaController {
         this.alertaService = alertaService;
     }
 
-    /** GET /api/v1/alertas — listar alertas activas (estado MEDIA o ALTA) */
+    /** GET /api/v1/alertas?nivel_minimo=1 — listar alertas activas (MEDIA=1, ALTA=2) */
     @GetMapping
-    public ResponseEntity<List<TransaccionCompletaDTO>> listarActivas() throws IOException {
-        return ResponseEntity.ok(alertaService.listarActivas());
+    public ResponseEntity<AlertaListaDTO> listarActivas(
+            @RequestParam(defaultValue = "1") int nivelMinimo) throws IOException {
+        return ResponseEntity.ok(alertaService.listarActivas(nivelMinimo));
     }
 
     /** PATCH /api/v1/alertas/{id}/confirmar — marcar como CONFIRMADO_FRAUDE */
